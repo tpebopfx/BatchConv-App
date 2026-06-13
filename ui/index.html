@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>BatchConv Ultimate Mobile</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="min-h-screen flex flex-col pb-24 selection:bg-red-500 selection:text-white w-full max-w-md mx-auto">
+
+    <!-- TOP HEADER -->
+    <header class="sticky top-0 z-50 backdrop-blur-md bg-opacity-80 border-b flex items-center justify-between px-5 py-4 w-full" style="background-color: var(--bg-secondary); border-color: var(--border);">
+        <div class="flex items-center gap-2">
+            <div class="w-7 h-7 rounded-lg bg-red-600 flex items-center justify-center">
+                <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                </svg>
+            </div>
+            <span class="font-bold text-lg tracking-tight">BatchConv</span>
+        </div>
+        
+        <div class="flex items-center gap-2">
+            <!-- LANGUAGE SWITCHER -->
+            <button id="lang-toggle" class="px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95" style="background-color: var(--bg-card); color: var(--text-primary);">
+                RU
+            </button>
+
+            <!-- THEME TOGGLE -->
+            <button id="theme-toggle" class="p-2 rounded-xl transition-all active:scale-95" style="background-color: var(--bg-card);" aria-label="Toggle Theme">
+                <svg id="theme-moon" class="w-5 h-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                </svg>
+                <svg id="theme-sun" class="w-5 h-5 text-yellow-500 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.364l-.707-.707M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <!-- MAIN INTERFACE -->
+    <main class="flex-1 px-4 py-5 w-full flex flex-col gap-5 overflow-x-hidden">
+        
+        <!-- SECTION 1: CONVERTER -->
+        <section id="section-converter" class="flex flex-col gap-5 w-full">
+            <!-- DROP / UPLOAD ZONE -->
+            <div id="drop-zone" class="custom-card rounded-3xl p-6 flex flex-col items-center text-center cursor-pointer transition-all active:scale-[0.98] w-full">
+                <div class="w-14 h-14 rounded-2xl flex items-center justify-center mb-4" style="background-color: var(--bg-card);">
+                    <svg class="w-7 h-7 text-red-500 pulse-glow" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                    </svg>
+                </div>
+                <h2 id="lang-upload-title" class="text-lg font-bold mb-1">Загрузите файлы</h2>
+                <p id="lang-upload-desc" class="text-xs text-neutral-400 max-w-[250px]" style="color: var(--text-secondary);">Нажмите для выбора любых форматов файлов</p>
+                <input type="file" id="file-input" multiple class="hidden">
+            </div>
+
+            <!-- CHOOSE INPUT & OUTPUT FORMATS -->
+            <div class="custom-card rounded-2xl p-4 flex flex-col gap-3 w-full">
+                <span id="lang-format-settings" class="text-xs font-bold tracking-wide uppercase" style="color: var(--text-secondary);">Параметры форматов</span>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <!-- INPUT FORMAT SELECT -->
+                    <div class="flex flex-col gap-1.5 min-w-0">
+                        <label id="lang-input-label" class="text-[10px] uppercase font-bold truncate" style="color: var(--text-secondary);">Исходный формат</label>
+                        <button id="input-format-btn" class="w-full py-2.5 px-3 rounded-xl border font-semibold text-xs flex items-center justify-between transition-all active:scale-95" style="background-color: var(--bg-card); border-color: var(--border); color: var(--text-primary);">
+                            <span id="current-input-display" class="truncate">AUTO (Любой)</span>
+                            <svg class="w-3.5 h-3.5 text-red-500 flex-shrink-0 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </button>
+                    </div>
+
+                    <!-- OUTPUT TARGET FORMAT SELECT -->
+                    <div class="flex flex-col gap-1.5 min-w-0">
+                        <label id="lang-output-label" class="text-[10px] uppercase font-bold truncate" style="color: var(--text-secondary);">Конвертировать в</label>
+                        <button id="output-format-btn" class="w-full py-2.5 px-3 rounded-xl border font-semibold text-xs flex items-center justify-between transition-all active:scale-95" style="background-color: var(--bg-card); border-color: var(--border); color: var(--text-primary);">
+                            <span id="current-output-display" class="truncate">PNG</span>
+                            <svg class="w-3.5 h-3.5 text-red-500 flex-shrink-0 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PROGRESS STATE -->
+            <div id="progress-card" class="custom-card rounded-2xl p-4 hidden w-full">
+                <div class="flex justify-between items-center mb-2 text-xs font-semibold">
+                    <span id="progress-status" style="color: var(--text-secondary);">Конвертация...</span>
+                    <span id="progress-percent" class="text-red-500">0%</span>
+                </div>
+                <div class="w-full h-1.5 rounded-full overflow-hidden" style="background-color: var(--bg-card);">
+                    <div id="progress-bar" class="h-full bg-red-600 w-0 transition-all duration-300"></div>
+                </div>
+            </div>
+
+            <!-- ACTION BUTTONS -->
+            <div class="flex flex-col gap-2 w-full">
+                <button id="start-btn" disabled class="w-full bg-red-600 disabled:opacity-40 text-white py-4 px-6 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.97]">
+                    <svg class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                    </svg>
+                    <span id="lang-start-btn" class="truncate">Начать обработку</span> (<span id="queue-count">0</span>)
+                </button>
+                <div class="grid grid-cols-2 gap-2 w-full">
+                    <button id="zip-btn" class="hidden w-full bg-emerald-600 text-white py-3 px-4 rounded-xl font-semibold text-xs items-center justify-center gap-1.5 transition-all active:scale-95 truncate">
+                        <span id="lang-zip-btn">Скачать все (ZIP)</span>
+                    </button>
+                    <button id="clear-btn" disabled class="w-full py-3 px-4 rounded-xl font-semibold text-xs text-center transition-all active:scale-95 truncate" style="background-color: var(--bg-secondary); border: 1px solid var(--border); color: var(--text-primary);">
+                        <span id="lang-clear-btn">Очистить</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- FILE QUEUE LIST -->
+            <div class="flex flex-col gap-2 w-full">
+                <span id="lang-queue-title" class="text-xs font-bold tracking-wide uppercase px-1" style="color: var(--text-secondary);">Очередь файлов</span>
+                <div id="file-list" class="flex flex-col gap-2 max-h-[220px] overflow-y-auto pr-1 w-full">
+                    <div id="lang-queue-empty" class="text-center py-8 text-xs" style="color: var(--text-secondary);">Очередь пуста</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 2: HISTORY -->
+        <section id="section-history" class="hidden flex flex-col gap-4 w-full">
+            <h2 id="lang-hist-header" class="text-xl font-bold">История сессии</h2>
+            <div id="history-list" class="flex flex-col gap-2 max-h-[350px] overflow-y-auto pr-1 w-full">
+                <div id="lang-hist-empty" class="text-center py-12 text-xs" style="color: var(--text-secondary);">Вы еще ничего не конвертировали</div>
+            </div>
+        </section>
+
+        <!-- SECTION 3: INFO (COLLAPSIBLE ACCORDION BASED ON README) -->
+        <section id="section-info" class="hidden flex flex-col gap-4 w-full">
+            <h2 id="lang-about-header" class="text-xl font-bold">О приложении</h2>
+            
+            <div class="flex flex-col gap-3 w-full">
+                
+                <!-- Card 1: About Project -->
+                <div class="custom-card rounded-2xl overflow-hidden transition-all duration-300">
+                    <button id="btn-acc-project" class="w-full p-4 flex items-center justify-between font-bold text-sm text-left">
+                        <span id="lang-acc-proj-title">1. О ПРОЕКТЕ</span>
+                        <svg class="w-4 h-4 text-red-500 transform transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                    </button>
+                    <div id="acc-project" class="accordion-content">
+                        <div class="p-4 pt-0 text-xs leading-relaxed space-y-2 border-t border-neutral-900/50" style="color: var(--text-secondary);">
+                            <p id="lang-acc-proj-p1">BatchConv Mobile предназначен для быстрой локальной обработки файлов прямо на телефоне без интернета и серверов.</p>
+                            <p id="lang-acc-proj-p2">Главная идея проекта — сделать простой и конфиденциальный инструмент, который группирует и конвертирует видео, аудио, изображения и документы за пару тапов.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card 2: How It Works -->
+                <div class="custom-card rounded-2xl overflow-hidden transition-all duration-300">
+                    <button id="btn-acc-works" class="w-full p-4 flex items-center justify-between font-bold text-sm text-left">
+                        <span id="lang-acc-works-title">2. КАК РАБОТАЕТ ПРИЛОЖЕНИЕ</span>
+                        <svg class="w-4 h-4 text-red-500 transform transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                    </button>
+                    <div id="acc-works" class="accordion-content">
+                        <div class="p-4 pt-0 text-xs leading-relaxed space-y-3 border-t border-neutral-900/50" style="color: var(--text-secondary);">
+                            <ol class="list-decimal list-inside space-y-1">
+                                <li id="lang-acc-works-step1">Пользователь выбирает один или несколько файлов.</li>
+                                <li id="lang-acc-works-step2">Приложение мгновенно определяет тип файлов.</li>
+                                <li id="lang-acc-works-step3">Пользователь выбирает целевой формат конвертации.</li>
+                                <li id="lang-acc-works-step4">Файлы последовательно обрабатываются локально.</li>
+                                <li id="lang-acc-works-step5">Результат автоматически сортируется по расширениям.</li>
+                            </ol>
+                            <div class="p-2.5 rounded-xl text-[11px] font-mono" style="background-color: var(--bg-primary);">
+                                Converted/<br>
+                                &nbsp;&nbsp;mp4/ -> file.mp4<br>
+                                &nbsp;&nbsp;mp3/ -> song.mp3
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card 3: Key Features -->
+                <div class="custom-card rounded-2xl overflow-hidden transition-all duration-300">
+                    <button id="btn-acc-features" class="w-full p-4 flex items-center justify-between font-bold text-sm text-left">
+                        <span id="lang-acc-feat-title">3. ОСНОВНЫЕ ВОЗМОЖНОСТИ</span>
+                        <svg class="w-4 h-4 text-red-500 transform transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                    </button>
+                    <div id="acc-features" class="accordion-content">
+                        <div class="p-4 pt-0 text-xs leading-relaxed space-y-1 border-t border-neutral-900/50" style="color: var(--text-secondary);">
+                            <div class="flex items-start gap-2"><span class="text-red-500">✓</span><span id="lang-acc-feat-f1">Полностью локальная работа без сети.</span></div>
+                            <div class="flex items-start gap-2"><span class="text-red-500">✓</span><span id="lang-acc-feat-f2">Поддержка сотен популярных и редких форматов.</span></div>
+                            <div class="flex items-start gap-2"><span class="text-red-500">✓</span><span id="lang-acc-feat-f3">Пакетная конвертация нескольких файлов в очередь.</span></div>
+                            <div class="flex items-start gap-2"><span class="text-red-500">✓</span><span id="lang-acc-feat-f4">Умная сортировка готовых результатов по папкам.</span></div>
+                            <div class="flex items-start gap-2"><span class="text-red-500">✓</span><span id="lang-acc-feat-f5">Сохранение истории сессии и индикация прогресса.</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card 4: Architecture & Tech -->
+                <div class="custom-card rounded-2xl overflow-hidden transition-all duration-300">
+                    <button id="btn-acc-tech" class="w-full p-4 flex items-center justify-between font-bold text-sm text-left">
+                        <span id="lang-acc-tech-title">4. ТЕХНОЛОГИИ</span>
+                        <svg class="w-4 h-4 text-red-500 transform transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                    </button>
+                    <div id="acc-tech" class="accordion-content">
+                        <div class="p-4 pt-0 text-xs leading-relaxed space-y-3.5 border-t border-neutral-900/50" style="color: var(--text-secondary);">
+                            <div>
+                                <span class="font-bold text-white text-[13px] block mb-1">Python Core</span>
+                                <p id="lang-acc-tech-py">Управляет очередью задач, вызывает FFmpeg для медиафайлов, Pillow для изображений, производит сканирование и сортировку готовых файлов на устройстве.</p>
+                            </div>
+                            <div>
+                                <span class="font-bold text-white text-[13px] block mb-1">HTML5 / Tailwind CSS / JS</span>
+                                <p id="lang-acc-tech-web">Обеспечивает современный адаптивный интерфейс с мгновенным откликом, нативной мобильной навигацией, переключением тем и локализацией.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card 5: Telegram Updates and Projects -->
+                <div class="custom-card rounded-2xl overflow-hidden border-blue-500/30 transition-all duration-300">
+                    <button id="btn-acc-telegram" class="w-full p-4 flex items-center justify-between font-bold text-sm text-left bg-gradient-to-r from-blue-600/5 via-transparent to-transparent">
+                        <span class="flex items-center gap-2">
+                            <svg class="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 0 0-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.37.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .24z"/>
+                            </svg>
+                            <span id="lang-acc-tg-title">5. НАШ КАНАЛ (UPDATES)</span>
+                        </span>
+                        <svg class="w-4 h-4 text-blue-500 transform transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                    </button>
+                    <div id="acc-telegram" class="accordion-content">
+                        <div class="p-4 pt-0 text-xs leading-relaxed space-y-3 border-t border-neutral-900/50" style="color: var(--text-secondary);">
+                            <p id="lang-acc-tg-desc">Подписывайтесь на наш Telegram-канал, чтобы оперативно получать свежие обновления приложения, важную информацию об изменениях и первыми тестировать другие новые крутые проекты!</p>
+                            <a href="https://t.me/tpebopfx_hub" target="_blank" class="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 px-4 rounded-xl font-bold text-center text-xs transition-all active:scale-95 flex items-center justify-center gap-2 mt-2">
+                                <span>tpebopfx_hub</span>
+                                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                </svg>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer Copyright Info Inside Tab -->
+                <div class="p-4 text-center text-[10px]" style="color: var(--text-secondary);">
+                    <span>&copy; 2025 BatchConv Mobile.</span><br>
+                    <span id="lang-about-ver">Версия 3.1.0 (Responsive & Accordion Edition)</span>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- FORMAT SELECTION MODAL -->
+    <div id="format-modal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm hidden flex items-end justify-center">
+        <div class="w-full max-w-md rounded-t-3xl p-5 flex flex-col gap-4 max-h-[85vh] transition-all transform translate-y-full" style="background-color: var(--bg-secondary);">
+            <div class="flex items-center justify-between border-b pb-3" style="border-color: var(--border);">
+                <h3 id="modal-title" class="text-base font-bold truncate">Выберите формат</h3>
+                <button onclick="closeFormatModal()" class="p-1 rounded-lg active:scale-90" style="background-color: var(--bg-card);">
+                    <svg class="w-5 h-5 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Category Filter Tabs -->
+            <div id="modal-categories" class="flex gap-2 overflow-x-auto no-scrollbar pb-1 w-full">
+                <!-- Categories will be generated dynamically -->
+            </div>
+
+            <!-- Formats Grid -->
+            <div id="modal-formats-grid" class="grid grid-cols-3 gap-2 overflow-y-auto max-h-[45vh] pr-1 pb-4">
+                <!-- Formats will be generated dynamically -->
+            </div>
+        </div>
+    </div>
+
+    <!-- STARTUP & PROMO TELEGRAM MODAL -->
+    <div id="promo-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="w-full max-w-sm rounded-3xl p-6 flex flex-col gap-5 border shadow-2xl transition-all" style="background-color: var(--bg-secondary); border-color: var(--border);">
+            <div class="flex flex-col items-center text-center gap-3">
+                <div class="w-16 h-16 rounded-2xl bg-blue-600/10 flex items-center justify-center text-blue-500">
+                    <svg class="w-10 h-10" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 0 0-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.37.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .24z"/>
+                    </svg>
+                </div>
+                <h3 id="lang-promo-title" class="text-lg font-bold">Присоединяйся к нам!</h3>
+                <p id="lang-promo-desc" class="text-xs leading-relaxed" style="color: var(--text-secondary);">Подписывайся на Telegram-канал, чтобы первым получать обновления, новости и доступ к новым крутым проектам!</p>
+            </div>
+
+            <!-- Telegram Link Button -->
+            <a href="https://t.me/tpebopfx_hub" target="_blank" class="w-full bg-blue-600 hover:bg-blue-500 text-white py-3.5 px-4 rounded-xl font-bold text-center text-xs transition-all active:scale-95 flex items-center justify-center gap-2">
+                <span>tpebopfx_hub</span>
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+            </a>
+
+            <!-- Offline Performance Warning Card -->
+            <div class="rounded-2xl p-4 border text-left text-xs leading-relaxed flex flex-col gap-2" style="background-color: var(--bg-primary); border-color: var(--border);">
+                <div class="font-bold flex items-center gap-1.5 text-amber-500">
+                    <span>⚠️</span>
+                    <span id="lang-warn-title">Локальная работа</span>
+                </div>
+                <div id="lang-warn-text" class="space-y-2 text-[11px]" style="color: var(--text-secondary);">
+                    <p>BatchConv работает полностью локально.</p>
+                    <p>Производительность и максимальный размер файлов зависят от возможностей вашего устройства. При обработке крупных файлов возможны повышенная нагрузка, нагрев и увеличение времени конвертации.</p>
+                    <p>Для лучшего результата рекомендуется закрыть фоновые приложения и обеспечить достаточное количество свободного места.</p>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between border-t pt-4" style="border-color: var(--border);">
+                <label class="flex items-center gap-2 cursor-pointer select-none">
+                    <input type="checkbox" id="promo-dont-show" class="w-4 h-4 rounded border-zinc-700 bg-zinc-800 text-blue-600 focus:ring-0 focus:ring-offset-0">
+                    <span id="lang-promo-dont-show" class="text-[11px]" style="color: var(--text-secondary);">Больше не показывать</span>
+                </label>
+                <button onclick="closePromoModal()" class="text-[11px] font-bold uppercase transition-all active:scale-95" style="color: var(--text-primary);">
+                    <span id="lang-promo-close">Закрыть</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- DYNAMIC SIZE WARNING MODAL -->
+    <div id="warn-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="w-full max-w-sm rounded-3xl p-6 flex flex-col gap-5 border shadow-2xl transition-all" style="background-color: var(--bg-secondary); border-color: var(--border);">
+            <div class="flex flex-col items-center text-center gap-3">
+                <div id="warn-modal-icon" class="w-16 h-16 rounded-2xl flex items-center justify-center">
+                    <!-- Icon injects dynamically -->
+                </div>
+                <h3 id="warn-modal-title" class="text-lg font-bold">Предупреждение</h3>
+                <p id="warn-modal-desc" class="text-xs leading-relaxed" style="color: var(--text-secondary);"></p>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2.5 w-full">
+                <button onclick="cancelConversion()" class="py-3 px-4 rounded-xl font-semibold text-xs text-center transition-all active:scale-95 truncate" style="background-color: var(--bg-card); border: 1px solid var(--border); color: var(--text-primary);">
+                    Отмена
+                </button>
+                <button onclick="proceedConversion()" class="bg-red-600 text-white py-3 px-4 rounded-xl font-bold text-xs text-center transition-all active:scale-95 truncate">
+                    Продолжить
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- BOTTOM NAVIGATION -->
+    <nav class="fixed bottom-0 left-0 right-0 z-40 border-t flex items-center justify-around py-2.5 px-4 w-full" style="background-color: var(--bg-secondary); border-color: var(--border);">
+        <button id="nav-btn-converter" class="nav-button flex flex-col items-center gap-1 text-xs font-medium active-nav transition-colors" style="color: var(--text-secondary);">
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+            </svg>
+            <span id="lang-nav-conv" class="truncate max-w-[80px]">Конвертер</span>
+        </button>
+        <button id="nav-btn-history" class="nav-button flex flex-col items-center gap-1 text-xs font-medium transition-colors" style="color: var(--text-secondary);">
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span id="lang-nav-hist" class="truncate max-w-[80px]">История</span>
+        </button>
+        <button id="nav-btn-info" class="nav-button flex flex-col items-center gap-1 text-xs font-medium transition-colors" style="color: var(--text-secondary);">
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span id="lang-nav-about" class="truncate max-w-[80px]">О нас</span>
+        </button>
+    </nav>
+
+    <!-- TOAST SYSTEM -->
+    <div id="toast" class="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl text-xs font-semibold text-white bg-red-600 shadow-lg opacity-0 pointer-events-none transition-all duration-300 w-auto max-w-[90%] text-center truncate"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>

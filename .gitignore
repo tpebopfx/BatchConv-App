@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+TempUploads/
+Converted/
+logs/
+*.db
+.DS_Store
