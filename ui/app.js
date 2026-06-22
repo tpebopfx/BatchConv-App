@@ -24,7 +24,7 @@ const translations = {
         histHeader: "История сессии",
         histEmpty: "Вы еще ничего не конвертировали",
         aboutHeader: "О приложении",
-        aboutVer: "Версия 3.1.0 (Responsive & Accordion Edition)",
+        aboutVer: "Версия 1.0.0",
         navConv: "Конвертер",
         navHist: "История",
         navAbout: "О нас",
@@ -35,6 +35,13 @@ const translations = {
         statusQueued: "В очереди",
         statusConverting: "Конвертация...",
         statusDone: "Готово",
+        statusPaused: "Пауза",
+        pauseBtn: "Пауза",
+        resumeBtn: "Продолжить",
+        cancelBtn: "Отмена",
+        elapsedLabel: "Прошедшее время",
+        currentEtaLabel: "Осталось у файла",
+        overallEtaLabel: "Осталось всего",
         langChanged: "Язык изменен на Русский",
         modalTitleInput: "Выберите исходный формат",
         modalTitleOutput: "Выберите конечный формат",
@@ -96,7 +103,7 @@ const translations = {
         histHeader: "Session History",
         histEmpty: "You haven't converted any files yet",
         aboutHeader: "About App",
-        aboutVer: "Version 3.1.0 (Responsive & Accordion Edition)",
+        aboutVer: "Version 1.0.0",
         navConv: "Converter",
         navHist: "History",
         navAbout: "About Us",
@@ -107,6 +114,13 @@ const translations = {
         statusQueued: "Queued",
         statusConverting: "Converting...",
         statusDone: "Ready",
+        statusPaused: "Paused",
+        pauseBtn: "Pause",
+        resumeBtn: "Resume",
+        cancelBtn: "Cancel",
+        elapsedLabel: "Elapsed time",
+        currentEtaLabel: "File ETA",
+        overallEtaLabel: "Total ETA",
         langChanged: "Language changed to English",
         modalTitleInput: "Select Input Format",
         modalTitleOutput: "Select Output Format",
@@ -159,21 +173,201 @@ const translations = {
 const state = {
     files: [],
     isConverting: false,
+    isPaused: false,
+    cancelRequested: false,
     inputFormat: 'auto',
     targetFormat: 'png',
     theme: localStorage.getItem('theme') || 'dark',
     lang: localStorage.getItem('lang') || 'ru',
     modalTarget: 'input',
-    activeCategory: 'video'
+    activeCategory: 'video',
+    activeFileIndex: -1,
+    totalStartTime: 0,
+    totalPausedMs: 0,
+    pauseStartedAt: 0,
+    fileStartTime: 0,
+    filePausedMs: 0,
+    filePauseStartedAt: 0,
+    processingTotalMs: 0,
+    completedCount: 0,
+    zipUrls: new Set(),
+    resultUrls: new Set()
 };
 
 // Formats file sizes properly to include KB, MB, and GB
-function formatFileSize(bytes) {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+
+function formatDuration(ms) {
+    const safeMs = Number.isFinite(ms) ? Math.max(0, ms) : 0;
+    const totalSeconds = Math.ceil(safeMs / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    if (hours > 0) {
+        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function estimateFileDurationMs(file) {
+    const sizeMB = file.size / (1024 * 1024);
+    const base = 1800 + (sizeMB * 520);
+    const smoothCap = 24000;
+    return Math.max(1600, Math.min(smoothCap, Math.round(base)));
+}
+
+function getActiveElapsedMs() {
+    if (!state.isConverting || !state.totalStartTime) return 0;
+    const now = Date.now();
+    const currentPause = state.isPaused ? (now - state.pauseStartedAt) : 0;
+    return Math.max(0, now - state.totalStartTime - state.totalPausedMs - currentPause);
+}
+
+function getActiveFileElapsedMs() {
+    if (!state.isConverting || !state.fileStartTime || state.activeFileIndex < 0) return 0;
+    const now = Date.now();
+    const currentPause = state.isPaused ? (now - state.filePauseStartedAt) : 0;
+    return Math.max(0, now - state.fileStartTime - state.filePausedMs - currentPause);
+}
+
+function computeOverallEtaMs() {
+    if (!state.isConverting) return 0;
+    return Math.max(0, state.processingTotalMs - getActiveElapsedMs());
+}
+
+function computeCurrentFileEtaMs() {
+    if (state.activeFileIndex < 0) return 0;
+    const current = state.files[state.activeFileIndex];
+    if (!current) return 0;
+    const estimated = current.estimatedMs || estimateFileDurationMs(current.file);
+    return Math.max(0, estimated - getActiveFileElapsedMs());
+}
+
+function computeFileQueueEtaMs(index) {
+    if (!state.isConverting) {
+        const file = state.files[index];
+        return file ? (file.estimatedMs || estimateFileDurationMs(file.file)) : 0;
+    }
+    let remaining = 0;
+    const start = Math.max(0, state.activeFileIndex);
+    for (let i = start; i <= index && i < state.files.length; i++) {
+        const item = state.files[i];
+        if (!item) continue;
+        const estimated = item.estimatedMs || estimateFileDurationMs(item.file);
+        if (item.status === 'success') continue;
+        if (i === state.activeFileIndex && item.status === 'processing') {
+            remaining += Math.max(0, estimated - getActiveFileElapsedMs());
+        } else {
+            remaining += estimated;
+        }
+    }
+    if (index < state.activeFileIndex) return 0;
+    return remaining;
+}
+
+function syncProgressControls() {
+    const pauseBtn = document.getElementById('pause-btn');
+    const cancelBtn = document.getElementById('cancel-processing-btn');
+    const pauseLabel = document.getElementById('lang-pause-btn');
+    const cancelLabel = document.getElementById('lang-cancel-processing-btn');
+
+    if (pauseBtn) {
+        pauseBtn.disabled = !state.isConverting;
+        pauseBtn.classList.toggle('opacity-50', !state.isConverting);
+        pauseBtn.classList.toggle('cursor-not-allowed', !state.isConverting);
+    }
+    if (cancelBtn) {
+        cancelBtn.disabled = !state.isConverting;
+        cancelBtn.classList.toggle('opacity-50', !state.isConverting);
+        cancelBtn.classList.toggle('cursor-not-allowed', !state.isConverting);
+    }
+    if (pauseLabel) {
+        pauseLabel.innerText = state.isPaused ? translations[state.lang].resumeBtn : translations[state.lang].pauseBtn;
+    }
+    if (cancelLabel) {
+        cancelLabel.innerText = translations[state.lang].cancelBtn;
+    }
+}
+
+function updateProgressHUD() {
+    const elapsedLabel = document.getElementById('elapsed-label');
+    const currentEtaLabel = document.getElementById('current-eta-label');
+    const overallEtaLabel = document.getElementById('overall-eta-label');
+    const elapsedTime = document.getElementById('elapsed-time');
+    const currentEtaTime = document.getElementById('current-eta-time');
+    const overallEtaTime = document.getElementById('overall-eta-time');
+    const activeIndex = state.activeFileIndex;
+    const activeItem = activeIndex >= 0 ? state.files[activeIndex] : null;
+    const activeProgress = activeItem && Number.isFinite(activeItem.progress) ? activeItem.progress : 0;
+    const basePercent = state.files.length > 0 ? ((state.completedCount + (activeProgress / 100)) / state.files.length) * 100 : 0;
+
+    if (elapsedLabel) elapsedLabel.innerText = translations[state.lang].elapsedLabel;
+    if (currentEtaLabel) currentEtaLabel.innerText = translations[state.lang].currentEtaLabel;
+    if (overallEtaLabel) overallEtaLabel.innerText = translations[state.lang].overallEtaLabel;
+    if (elapsedTime) elapsedTime.innerText = formatDuration(getActiveElapsedMs());
+    if (currentEtaTime) currentEtaTime.innerText = formatDuration(computeCurrentFileEtaMs());
+    if (overallEtaTime) overallEtaTime.innerText = formatDuration(computeOverallEtaMs());
+
+    if (progressBar) {
+        progressBar.style.width = `${Math.min(100, Math.max(0, basePercent))}%`;
+    }
+    if (progressPercent) {
+        progressPercent.innerText = `${Math.min(100, Math.max(0, basePercent)).toFixed(1)}%`;
+    }
+    if (progressStatus) {
+        if (state.cancelRequested) {
+            progressStatus.innerText = state.lang === 'ru' ? 'Отмена...' : 'Canceling...';
+        } else if (state.isPaused) {
+            progressStatus.innerText = translations[state.lang].statusPaused;
+        } else if (state.isConverting && activeIndex >= 0) {
+            progressStatus.innerText = state.lang === 'ru'
+                ? `Конвертация ${activeIndex + 1} из ${state.files.length}`
+                : `Processing ${activeIndex + 1} of ${state.files.length}`;
+        } else {
+            progressStatus.innerText = translations[state.lang].statusConverting;
+        }
+    }
+    syncProgressControls();
+}
+
+function cleanupCache() {
+    state.resultUrls.forEach(url => {
+        try { URL.revokeObjectURL(url); } catch (_) {}
+    });
+    state.resultUrls.clear();
+
+    state.zipUrls.forEach(url => {
+        try { URL.revokeObjectURL(url); } catch (_) {}
+    });
+    state.zipUrls.clear();
+}
+
+function resetConversionState() {
+    state.isConverting = false;
+    state.isPaused = false;
+    state.cancelRequested = false;
+    state.activeFileIndex = -1;
+    state.totalStartTime = 0;
+    state.totalPausedMs = 0;
+    state.pauseStartedAt = 0;
+    state.fileStartTime = 0;
+    state.filePausedMs = 0;
+    state.filePauseStartedAt = 0;
+    state.processingTotalMs = 0;
+    state.completedCount = 0;
+    syncProgressControls();
+    updateProgressHUD();
+}
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function buildProcessingSummary(prefix, totalFiles, completedFiles) {
+    const currentNumber = Math.min(totalFiles, completedFiles + 1);
+    return state.lang === 'ru'
+        ? `${prefix} ${currentNumber} из ${totalFiles}`
+        : `${prefix} ${currentNumber} of ${totalFiles}`;
 }
 
 const langToggle = document.getElementById('lang-toggle');
@@ -206,6 +400,18 @@ function applyLanguage(lang) {
     document.getElementById('lang-nav-conv').innerText = t.navConv;
     document.getElementById('lang-nav-hist').innerText = t.navHist;
     document.getElementById('lang-nav-about').innerText = t.navAbout;
+
+    if (document.getElementById('lang-pause-btn')) {
+        document.getElementById('lang-pause-btn').innerText = state.isPaused ? t.resumeBtn : t.pauseBtn;
+    }
+    if (document.getElementById('lang-cancel-processing-btn')) {
+        document.getElementById('lang-cancel-processing-btn').innerText = t.cancelBtn;
+    }
+    if (document.getElementById('elapsed-label')) document.getElementById('elapsed-label').innerText = t.elapsedLabel;
+    if (document.getElementById('current-eta-label')) document.getElementById('current-eta-label').innerText = t.currentEtaLabel;
+    if (document.getElementById('overall-eta-label')) document.getElementById('overall-eta-label').innerText = t.overallEtaLabel;
+    if (document.getElementById('warn-cancel-btn')) document.getElementById('warn-cancel-btn').innerText = lang === 'ru' ? 'Отмена' : 'Cancel';
+    if (document.getElementById('warn-continue-btn')) document.getElementById('warn-continue-btn').innerText = lang === 'ru' ? 'Продолжить' : 'Continue';
 
     // Promo modal
     document.getElementById('lang-promo-title').innerText = t.promoTitle;
@@ -246,6 +452,7 @@ function applyLanguage(lang) {
 
     updateQueueUI();
     updateHistoryUI();
+    updateProgressHUD();
 }
 
 langToggle.addEventListener('click', () => {
@@ -407,6 +614,8 @@ function handleFiles(files) {
             file: file,
             status: 'queued',
             progress: 0,
+            estimatedMs: estimateFileDurationMs(file),
+            etaMs: estimateFileDurationMs(file),
             resultUrl: null,
             resultName: null
         });
@@ -440,25 +649,39 @@ function updateQueueUI() {
 
     if (state.files.length === 0) {
         fileListContainer.innerHTML = `<div id="lang-queue-empty" class="text-center py-8 text-xs w-full" style="color: var(--text-secondary);">${translations[state.lang].queueEmpty}</div>`;
+        updateProgressHUD();
         return;
     }
 
     fileListContainer.innerHTML = '';
-    state.files.forEach(item => {
+    state.files.forEach((item, index) => {
         const el = document.createElement('div');
         el.className = 'custom-card rounded-xl p-3 flex items-center justify-between text-xs w-full gap-2';
-        
+
+        const queueEtaText = formatDuration(computeFileQueueEtaMs(index));
+        const progressText = `${Number.isFinite(item.progress) ? item.progress.toFixed(1) : '0.0'}%`;
+
         let badge = `<span class="px-2 py-1 rounded-md bg-yellow-600/20 text-yellow-500 font-semibold flex-shrink-0">${translations[state.lang].statusQueued}</span>`;
         if (item.status === 'processing') {
-            badge = `<span class="px-2 py-1 rounded-md bg-blue-600/20 text-blue-400 font-semibold flex-shrink-0">${translations[state.lang].statusConverting} ${item.progress}%</span>`;
+            const processingLabel = state.isPaused ? translations[state.lang].statusPaused : translations[state.lang].statusConverting;
+            badge = `<span class="px-2 py-1 rounded-md bg-blue-600/20 text-blue-400 font-semibold flex-shrink-0">${processingLabel} ${progressText}</span>`;
         } else if (item.status === 'success') {
             badge = `<span class="px-2 py-1 rounded-md bg-emerald-600/20 text-emerald-500 font-semibold flex-shrink-0">${translations[state.lang].statusDone}</span>`;
         }
 
+        const lineOne = item.status === 'processing'
+            ? `${formatFileSize(item.file.size)} • ${progressText}`
+            : formatFileSize(item.file.size);
+
+        const lineTwo = item.status === 'processing'
+            ? `${translations[state.lang].currentEtaLabel}: ${queueEtaText}`
+            : `${translations[state.lang].currentEtaLabel}: ${queueEtaText}`;
+
         el.innerHTML = `
             <div class="flex flex-col gap-0.5 min-w-0 flex-1">
                 <span class="font-bold truncate block w-full break-all">${item.file.name}</span>
-                <span class="text-[10px]" style="color: var(--text-secondary);">${formatFileSize(item.file.size)}</span>
+                <span class="text-[10px]" style="color: var(--text-secondary);">${lineOne}</span>
+                <span class="text-[10px]" style="color: var(--text-secondary);">${lineTwo}</span>
             </div>
             <div class="flex items-center gap-2 flex-shrink-0">
                 ${badge}
@@ -466,22 +689,41 @@ function updateQueueUI() {
                     <button onclick="downloadSingle('${item.id}')" class="p-1.5 rounded-lg bg-emerald-600 text-white active:scale-90">
                         <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
                     </button>
-                ` : `
+                ` : item.status === 'queued' ? `
                     <button onclick="removeFile('${item.id}')" class="p-1.5 rounded-lg active:scale-90" style="background-color: var(--bg-card);"><svg class="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                ` : `
+                    <div class="p-1.5 rounded-lg" style="background-color: var(--bg-card);">
+                        <svg class="w-4 h-4 text-red-500 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v4m0 8v4m8-8h-4M8 12H4m11.314-5.657l-2.828 2.828M9.514 14.485l-2.828 2.828m0-11.313l2.828 2.828m5.657 5.657l2.828 2.828"/></svg>
+                    </div>
                 `}
             </div>
         `;
         fileListContainer.appendChild(el);
     });
+
+    updateProgressHUD();
 }
 
 function removeFile(id) {
+    const target = state.files.find(f => f.id === id);
+    if (target && target.resultUrl) {
+        try { URL.revokeObjectURL(target.resultUrl); } catch (_) {}
+        state.resultUrls.delete(target.resultUrl);
+    }
     state.files = state.files.filter(f => f.id !== id);
     updateQueueUI();
+    updateProgressHUD();
 }
 
 document.getElementById('clear-btn').addEventListener('click', () => {
+    cleanupCache();
+    state.files.forEach(item => {
+        if (item.resultUrl) {
+            try { URL.revokeObjectURL(item.resultUrl); } catch (_) {}
+        }
+    });
     state.files = [];
+    resetConversionState();
     updateQueueUI();
     document.getElementById('progress-card').classList.add('hidden');
     document.getElementById('zip-btn').classList.add('hidden');
@@ -500,55 +742,53 @@ const progressBar = document.getElementById('progress-bar');
 const progressPercent = document.getElementById('progress-percent');
 const progressStatus = document.getElementById('progress-status');
 
+
 startBtn.addEventListener('click', () => {
     if (state.files.length === 0 || state.isConverting) return;
 
-    // Get max file size in queue (in MB)
     const maxSizeBytes = Math.max(...state.files.map(f => f.file.size));
     const maxSizeMB = maxSizeBytes / (1024 * 1024);
 
     if (maxSizeMB < 50) {
-        // No warning, proceed immediately
         proceedConversion();
-    } else {
-        // Determine Warning Level
-        let title = '';
-        let desc = '';
-        let iconColor = 'bg-yellow-600/10 text-yellow-500';
-        let svgIcon = `<svg class="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>`;
-
-        if (maxSizeMB >= 50 && maxSizeMB < 200) {
-            title = state.lang === 'ru' ? 'Крупный файл' : 'Large File Detected';
-            desc = state.lang === 'ru' 
-                ? 'Один из ваших файлов крупнее обычного (более 50 МБ). Обработка полностью локальна, поэтому она может занять чуть больше времени в зависимости от оперативной памяти и свободного места на устройстве.' 
-                : 'One of your files is larger than usual (over 50 MB). Processing is completely local, so it may take slightly longer depending on your available RAM and storage.';
-        } else if (maxSizeMB >= 200 && maxSizeMB < 700) {
-            title = state.lang === 'ru' ? 'Тяжёлая нагрузка' : 'Heavy Load Warning';
-            iconColor = 'bg-orange-600/10 text-orange-500';
-            desc = state.lang === 'ru' 
-                ? 'Обнаружен файл размером более 200 МБ. Локальная конвертация вызовет заметную нагрузку на процессор вашего телефона, возможен умеренный нагрев батареи. Рекомендуется не закрывать вкладку браузера.' 
-                : 'A file larger than 200 MB detected. Local encoding will trigger noticeable CPU load on your phone; moderate battery warming is possible. We recommend keeping the active browser tab open.';
-        } else if (maxSizeMB >= 700 && maxSizeMB < 2048) {
-            title = state.lang === 'ru' ? 'Высокая нагрузка CPU & RAM' : 'Extreme Resource Load';
-            iconColor = 'bg-red-600/10 text-red-500';
-            desc = state.lang === 'ru' 
-                ? 'Файл очень крупный (более 700 МБ). При локальной обработке будет задействован максимальный ресурс процессора, оперативной памяти и батареи устройства. Закройте другие фоновые приложения.' 
-                : 'Extremely large file (over 700 MB). Local processing will consume maximum CPU, RAM, and battery resources on your device. Please close other heavy background apps before continuing.';
-        } else {
-            title = state.lang === 'ru' ? 'Критический размер!' : 'Critical File Size!';
-            iconColor = 'bg-red-700/20 text-red-600';
-            desc = state.lang === 'ru' 
-                ? 'Экстремально большой файл (более 2 ГБ)! Локальная конвертация в браузере требует огромного запаса ОЗУ и свободного места. На слабых или старых телефонах процесс может работать нестабильно или аварийно завершиться.' 
-                : 'Extremely massive file (over 2 GB)! Local browser-based conversion requires huge amounts of RAM and free storage. This process may be unstable or crash on budget/older mobile devices.';
-        }
-
-        warnModalTitle.innerText = title;
-        warnModalDesc.innerText = desc;
-        warnModalIcon.className = `w-16 h-16 rounded-2xl flex items-center justify-center ${iconColor}`;
-        warnModalIcon.innerHTML = svgIcon;
-        
-        warnModal.classList.remove('hidden');
+        return;
     }
+
+    let title = '';
+    let desc = '';
+    let iconColor = 'bg-yellow-600/10 text-yellow-500';
+    let svgIcon = `<svg class="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>`;
+
+    if (maxSizeMB >= 50 && maxSizeMB < 200) {
+        title = state.lang === 'ru' ? 'Крупный файл' : 'Large File Detected';
+        desc = state.lang === 'ru'
+            ? 'Один из ваших файлов крупнее обычного (более 50 МБ). Обработка полностью локальна, поэтому она может занять чуть больше времени в зависимости от оперативной памяти и свободного места на устройстве.'
+            : 'One of your files is larger than usual (over 50 MB). Processing is completely local, so it may take slightly longer depending on your available RAM and storage.';
+    } else if (maxSizeMB >= 200 && maxSizeMB < 700) {
+        title = state.lang === 'ru' ? 'Тяжёлая нагрузка' : 'Heavy Load Warning';
+        iconColor = 'bg-orange-600/10 text-orange-500';
+        desc = state.lang === 'ru'
+            ? 'Обнаружен файл размером более 200 МБ. Локальная конвертация вызовет заметную нагрузку на процессор вашего телефона, возможен умеренный нагрев батареи. Рекомендуется не закрывать вкладку браузера.'
+            : 'A file larger than 200 MB detected. Local encoding will trigger noticeable CPU load on your phone; moderate battery warming is possible. We recommend keeping the active browser tab open.';
+    } else if (maxSizeMB >= 700 && maxSizeMB < 2048) {
+        title = state.lang === 'ru' ? 'Высокая нагрузка CPU & RAM' : 'Extreme Resource Load';
+        iconColor = 'bg-red-600/10 text-red-500';
+        desc = state.lang === 'ru'
+            ? 'Файл очень крупный (более 700 МБ). При локальной обработке будет задействован максимальный ресурс процессора, оперативной памяти и батареи устройства. Закройте другие фоновые приложения.'
+            : 'Extremely large file (over 700 MB). Local processing will consume maximum CPU, RAM, and battery resources on your device. Please close other heavy background apps before continuing.';
+    } else {
+        title = state.lang === 'ru' ? 'Критический размер!' : 'Critical File Size!';
+        iconColor = 'bg-red-700/20 text-red-600';
+        desc = state.lang === 'ru'
+            ? 'Экстремально большой файл (более 2 ГБ)! Локальная конвертация в браузере требует огромного запаса ОЗУ и свободного места. На слабых или старых телефонах процесс может работать нестабильно или аварийно завершиться.'
+            : 'Extremely massive file (over 2 GB)! Local browser-based conversion requires huge amounts of RAM and free storage. This process may be unstable or crash on budget/older mobile devices.';
+    }
+
+    warnModalTitle.innerText = title;
+    warnModalDesc.innerText = desc;
+    warnModalIcon.className = `w-16 h-16 rounded-2xl flex items-center justify-center ${iconColor}`;
+    warnModalIcon.innerHTML = svgIcon;
+    warnModal.classList.remove('hidden');
 });
 
 function cancelConversion() {
@@ -558,48 +798,174 @@ function cancelConversion() {
     document.getElementById('clear-btn').disabled = false;
 }
 
+function togglePauseConversion() {
+    if (!state.isConverting) return;
+    if (state.isPaused) {
+        const now = Date.now();
+        state.totalPausedMs += now - state.pauseStartedAt;
+        state.filePausedMs += now - state.filePauseStartedAt;
+        state.isPaused = false;
+        state.pauseStartedAt = 0;
+        state.filePauseStartedAt = 0;
+        updateProgressHUD();
+        updateQueueUI();
+        return;
+    }
+
+    state.isPaused = true;
+    state.pauseStartedAt = Date.now();
+    state.filePauseStartedAt = Date.now();
+    updateProgressHUD();
+    updateQueueUI();
+}
+
+function cancelOngoingConversion() {
+    if (!state.isConverting) return;
+    state.cancelRequested = true;
+    if (state.isPaused) {
+        const now = Date.now();
+        state.totalPausedMs += now - state.pauseStartedAt;
+        state.filePausedMs += now - state.filePauseStartedAt;
+        state.isPaused = false;
+        state.pauseStartedAt = 0;
+        state.filePauseStartedAt = 0;
+    }
+    updateProgressHUD();
+    updateQueueUI();
+}
+
+function waitWhilePaused() {
+    return new Promise(resolve => {
+        const tick = () => {
+            if (!state.isPaused || state.cancelRequested) {
+                resolve();
+                return;
+            }
+            setTimeout(tick, 90);
+        };
+        tick();
+    });
+}
+
+async function processCurrentFile(item, index) {
+    state.activeFileIndex = index;
+    state.fileStartTime = Date.now();
+    state.filePausedMs = 0;
+    state.filePauseStartedAt = 0;
+    item.status = 'processing';
+    item.progress = 0;
+    item.etaMs = item.estimatedMs || estimateFileDurationMs(item.file);
+    updateQueueUI();
+    updateProgressHUD();
+
+    const estimatedMs = item.estimatedMs || estimateFileDurationMs(item.file);
+    const tickMs = 85;
+
+    while (item.progress < 100 && !state.cancelRequested) {
+        if (state.isPaused) {
+            await waitWhilePaused();
+            if (state.cancelRequested) break;
+            continue;
+        }
+
+        const activeMs = getActiveFileElapsedMs();
+        const nextProgress = Math.min(99.9, (activeMs / estimatedMs) * 100);
+        item.progress = Math.max(item.progress, nextProgress);
+        item.etaMs = Math.max(0, estimatedMs - activeMs);
+        updateQueueUI();
+        updateProgressHUD();
+
+        if (item.progress >= 99.9) {
+            break;
+        }
+
+        await sleep(tickMs);
+    }
+
+    if (state.cancelRequested) {
+        item.status = 'queued';
+        item.progress = 0;
+        item.etaMs = estimatedMs;
+        updateQueueUI();
+        updateProgressHUD();
+        return false;
+    }
+
+    item.progress = 100;
+    item.etaMs = 0;
+    item.status = 'success';
+    item.resultUrl = URL.createObjectURL(item.file);
+    state.resultUrls.add(item.resultUrl);
+    item.resultName = item.file.name.substring(0, item.file.name.lastIndexOf('.')) + '.' + state.targetFormat;
+
+    state.completedCount += 1;
+    addToHistory(item);
+    updateQueueUI();
+    updateProgressHUD();
+    return true;
+}
+
 async function proceedConversion() {
     warnModal.classList.add('hidden');
+
+    if (state.files.length === 0 || state.isConverting) return;
+
     state.isConverting = true;
+    state.isPaused = false;
+    state.cancelRequested = false;
+    state.activeFileIndex = -1;
+    state.totalStartTime = Date.now();
+    state.totalPausedMs = 0;
+    state.pauseStartedAt = 0;
+    state.fileStartTime = 0;
+    state.filePausedMs = 0;
+    state.filePauseStartedAt = 0;
+    state.completedCount = state.files.filter(f => f.status === 'success').length;
+    state.processingTotalMs = state.files.reduce((total, file) => total + (file.estimatedMs || estimateFileDurationMs(file.file)), 0);
+
     startBtn.disabled = true;
     document.getElementById('clear-btn').disabled = true;
-    progressCard.classList.remove('hidden');
+    document.getElementById('progress-card').classList.remove('hidden');
+    syncProgressControls();
+    updateQueueUI();
+    updateProgressHUD();
 
     let successCount = 0;
 
     for (let i = 0; i < state.files.length; i++) {
         const item = state.files[i];
         if (item.status === 'success') {
-            successCount++;
+            successCount += 1;
             continue;
         }
-        item.status = 'processing';
-        item.progress = 25;
-        updateQueueUI();
 
-        await new Promise(resolve => setTimeout(resolve, 600));
-        
-        item.progress = 100;
-        item.status = 'success';
-        item.resultUrl = URL.createObjectURL(item.file);
-        item.resultName = item.file.name.substring(0, item.file.name.lastIndexOf('.')) + '.' + state.targetFormat;
-        successCount++;
+        const ok = await processCurrentFile(item, i);
+        if (!ok) {
+            break;
+        }
 
-        const totalPercent = Math.round(((i + 1) / state.files.length) * 100);
-        progressBar.style.width = `${totalPercent}%`;
-        progressPercent.innerText = `${totalPercent}%`;
-        progressStatus.innerText = state.lang === 'ru' ? `Конвертировано ${i + 1} из ${state.files.length}` : `Converted ${i + 1} of ${state.files.length}`;
-        
-        addToHistory(item);
+        successCount += 1;
+    }
+
+    if (state.cancelRequested) {
+        state.isConverting = false;
+        state.cancelRequested = false;
+        document.getElementById('clear-btn').disabled = false;
+        syncProgressControls();
         updateQueueUI();
+        updateProgressHUD();
+        showToast(state.lang === 'ru' ? 'Конвертация отменена' : 'Conversion canceled');
+        return;
     }
 
     state.isConverting = false;
     document.getElementById('clear-btn').disabled = false;
     document.getElementById('zip-btn').classList.remove('hidden');
+    syncProgressControls();
+    updateQueueUI();
+    updateProgressHUD();
     showToast(`${translations[state.lang].toastDone} ${successCount}`);
 }
-
 function downloadSingle(id) {
     const item = state.files.find(f => f.id === id);
     if (item && item.resultUrl) {
@@ -617,11 +983,16 @@ document.getElementById('zip-btn').addEventListener('click', async () => {
     });
     const content = await zip.generateAsync({ type: 'blob' });
     const url = URL.createObjectURL(content);
+    state.zipUrls.add(url);
     const a = document.createElement('a');
     a.href = url;
     a.download = `BatchConv_Mobile_${Date.now()}.zip`;
     a.click();
-    showToast('ZIP OK!');
+    setTimeout(() => {
+        try { URL.revokeObjectURL(url); } catch (_) {}
+        state.zipUrls.delete(url);
+    }, 3000);
+    showToast(state.lang === 'ru' ? 'ZIP готов' : 'ZIP ready');
 });
 
 const historyItems = [];
@@ -673,3 +1044,4 @@ function showToast(msg) {
 
 applyLanguage(state.lang);
 checkPromoOnLoad();
+window.addEventListener('beforeunload', () => cleanupCache());

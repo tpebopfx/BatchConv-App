@@ -87,12 +87,36 @@
 
             <!-- PROGRESS STATE -->
             <div id="progress-card" class="custom-card rounded-2xl p-4 hidden w-full">
-                <div class="flex justify-between items-center mb-2 text-xs font-semibold">
+                <div class="flex justify-between items-center mb-2 text-xs font-semibold gap-2">
                     <span id="progress-status" style="color: var(--text-secondary);">Конвертация...</span>
-                    <span id="progress-percent" class="text-red-500">0%</span>
+                    <span id="progress-percent" class="text-red-500">0.0%</span>
                 </div>
                 <div class="w-full h-1.5 rounded-full overflow-hidden" style="background-color: var(--bg-card);">
                     <div id="progress-bar" class="h-full bg-red-600 w-0 transition-all duration-300"></div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-2 mt-3">
+                    <div class="rounded-xl p-2.5 text-center" style="background-color: var(--bg-primary); border: 1px solid var(--border);">
+                        <div id="elapsed-label" class="text-[10px] uppercase font-bold tracking-wide" style="color: var(--text-secondary);">Прошедшее время</div>
+                        <div id="elapsed-time" class="text-sm font-bold mt-1">00:00</div>
+                    </div>
+                    <div class="rounded-xl p-2.5 text-center" style="background-color: var(--bg-primary); border: 1px solid var(--border);">
+                        <div id="current-eta-label" class="text-[10px] uppercase font-bold tracking-wide" style="color: var(--text-secondary);">Осталось у файла</div>
+                        <div id="current-eta-time" class="text-sm font-bold mt-1">00:00</div>
+                    </div>
+                    <div class="rounded-xl p-2.5 text-center" style="background-color: var(--bg-primary); border: 1px solid var(--border);">
+                        <div id="overall-eta-label" class="text-[10px] uppercase font-bold tracking-wide" style="color: var(--text-secondary);">Осталось всего</div>
+                        <div id="overall-eta-time" class="text-sm font-bold mt-1">00:00</div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2 mt-3">
+                    <button id="pause-btn" onclick="togglePauseConversion()" class="w-full py-3 px-4 rounded-xl font-semibold text-xs text-center transition-all active:scale-95 truncate" style="background-color: var(--bg-card); border: 1px solid var(--border); color: var(--text-primary);">
+                        <span id="lang-pause-btn">Пауза</span>
+                    </button>
+                    <button id="cancel-processing-btn" onclick="cancelOngoingConversion()" class="w-full bg-red-600 text-white py-3 px-4 rounded-xl font-bold text-xs text-center transition-all active:scale-95 truncate">
+                        <span id="lang-cancel-processing-btn">Отмена</span>
+                    </button>
                 </div>
             </div>
 
@@ -239,7 +263,7 @@
                 <!-- Footer Copyright Info Inside Tab -->
                 <div class="p-4 text-center text-[10px]" style="color: var(--text-secondary);">
                     <span>&copy; 2025 BatchConv Mobile.</span><br>
-                    <span id="lang-about-ver">Версия 3.1.0 (Responsive & Accordion Edition)</span>
+                    <span id="lang-about-ver">Версия 1.0.0</span>
                 </div>
             </div>
         </section>
@@ -327,10 +351,10 @@
             </div>
 
             <div class="grid grid-cols-2 gap-2.5 w-full">
-                <button onclick="cancelConversion()" class="py-3 px-4 rounded-xl font-semibold text-xs text-center transition-all active:scale-95 truncate" style="background-color: var(--bg-card); border: 1px solid var(--border); color: var(--text-primary);">
+                <button id="warn-cancel-btn" onclick="cancelConversion()" class="py-3 px-4 rounded-xl font-semibold text-xs text-center transition-all active:scale-95 truncate" style="background-color: var(--bg-card); border: 1px solid var(--border); color: var(--text-primary);">
                     Отмена
                 </button>
-                <button onclick="proceedConversion()" class="bg-red-600 text-white py-3 px-4 rounded-xl font-bold text-xs text-center transition-all active:scale-95 truncate">
+                <button id="warn-continue-btn" onclick="proceedConversion()" class="bg-red-600 text-white py-3 px-4 rounded-xl font-bold text-xs text-center transition-all active:scale-95 truncate">
                     Продолжить
                 </button>
             </div>

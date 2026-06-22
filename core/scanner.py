@@ -1,39 +1,71 @@
 import os
-from core.converters.image_conv import convert_image
-from core.converters.media_conv import convert_media
+import subprocess
+from PIL import Image
+from core.config import FFMPEG_PATH, UPLOAD_FOLDER, OUTPUT_FOLDER
 
-# Группируем форматы по модулям
-IMAGE_FORMATS = ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif']
-MEDIA_FORMATS = ['mp4', 'mkv', 'webm', 'avi', 'mov', 'flv', 'mp3', 'wav', 'flac', 'ogg', 'aac', 'm4a']
-DOC_FORMATS = ['pdf', 'docx', 'txt', 'xlsx']
-ARCHIVE_FORMATS = ['zip', 'tar', 'gz', 'rar']
-BOOK_FORMATS = ['epub', 'fb2', 'mobi']
+def convert_image(input_path, output_path, target_format):
+    """Обработка изображений с помощью Pillow"""
+    try:
+        with Image.open(input_path) as img:
+            # Если конвертируем в jpeg/jpg, убираем альфа-канал (прозрачность), иначе Pillow упадет
+            if target_format.lower() in ['jpg', 'jpeg'] and img.mode in ('RGBA', 'LA'):
+                background = Image.new('RGB', img.size, (255, 255, 255))
+                background.paste(img, mask=img.split()[-1])
+                img = background
+            
+            img.save(output_path, format=target_format.upper())
+        return True, None
+    except Exception as e:
+        return False, f"Ошибка Pillow: {str(e)}"
 
-def process_conversion(input_path, output_folder, target_format):
-    """Определяет формат и направляет файл в нужный изолированный модуль"""
-    if not os.path.exists(input_path):
-        return {"success": False, "error": "Исходный файл не найден на устройстве"}
+def convert_media_via_ffmpeg(input_path, output_path):
+    """Обработка видео и аудио с помощью FFmpeg"""
+    try:
+        # -y автоматически перезаписывает файл, если он существует
+        cmd = [FFMPEG_PATH, "-y", "-i", input_path, output_path]
         
-    _, ext = os.path.splitext(input_path)
-    ext = ext.replace('.', '').lower()
-    target_format = target_format.lower()
+        # Запускаем скрытый процесс
+        process = subprocess.run(
+            cmd, 
+            stdout=subprocess.PIPE, 
+            stderr=subprocess.PIPE, 
+            text=True
+        )
+        
+        if process.returncode == 0:
+            return True, None
+        else:
+            return False, f"Ошибка FFmpeg: {process.stderr}"
+    except Exception as e:
+        return False, f"Не удалось запустить конвертер: {str(e)}"
+
+def process_conversion(filename, target_format):
+    """Главная функция-распределитель"""
+    input_path = os.path.join(UPLOAD_FOLDER, filename)
     
-    # 1. Направляем в модуль картинок
-    if ext in IMAGE_FORMATS:
-        return convert_image(input_path, output_folder, target_format)
-        
-    # 2. Направляем в модуль видео/аудио
-    elif ext in MEDIA_FORMATS:
-        return convert_media(input_path, output_folder, target_format)
-        
-    # 3. Заглушки для остальных типов
-    elif ext in DOC_FORMATS:
-        return {"success": False, "error": "Конвертация документов временно недоступна"}
-    elif ext in ARCHIVE_FORMATS:
-        return {"success": False, "error": "Конвертация архивов временно недоступна"}
-    elif ext in BOOK_FORMATS:
-        return {"success": False, "error": "Конвертация книг временно недоступна"}
-        
+    # Генерируем новое имя файла (например, video.mp4 -> video.webm)
+    base_name, _ = os.path.splitext(filename)
+    output_filename = f"{base_name}.{target_format}"
+    output_path = os.path.join(OUTPUT_FOLDER, output_filename)
+    
+    if not os.path.exists(input_path):
+        return {"status": "error", "message": "Исходный файл не найден"}
+
+    # Списки форматов для деления логики
+    image_formats = ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'tiff', 'ico']
+    
+    # Запускаем нужный движок
+    if target_format.lower() in image_formats:
+        success, error_msg = convert_image(input_path, output_path, target_format)
     else:
-        return {"success": False, "error": f"Формат {ext} не поддерживается приложением"}
+        success, error_msg = convert_media_via_ffmpeg(input_path, output_path)
+        
+    if success:
+        return {
+            "status": "success", 
+            "output_file": output_filename,
+            "message": "Конвертация успешно завершена"
+        }
+    else:
+        return {"status": "error", "message": error_msg}
 
