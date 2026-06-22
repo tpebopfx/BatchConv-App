@@ -18,6 +18,9 @@ android.minapi = 24
 android.ndk = 25b
 android.archs = arm64-v8a, armeabi-v7a
 android.permissions = INTERNET,ACCESS_NETWORK_STATE,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,READ_MEDIA_IMAGES,READ_MEDIA_VIDEO,READ_MEDIA_AUDIO
+android.accept_sdk_license = True
+
+# NOTE: automatic GitHub build triggering is controlled by the GitHub Actions workflow, not by buildozer.spec.
 
 [buildozer]
 log_level = 2
