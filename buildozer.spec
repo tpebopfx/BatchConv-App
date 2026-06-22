@@ -1,5 +1,5 @@
 [app]
-title = BatchConv Ultimate Mobile
+title = BatchConv
 package.name = batchconv
 package.domain = org.batchconv
 source.dir = .
